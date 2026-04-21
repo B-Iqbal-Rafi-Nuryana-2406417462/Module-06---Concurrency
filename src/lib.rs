@@ -1,6 +1,7 @@
 use std::{
     sync::{mpsc, Arc, Mutex},
     thread,
+    fmt,
 };
 
 pub struct ThreadPool {
@@ -8,16 +9,33 @@ pub struct ThreadPool {
     sender: mpsc::Sender<Job>,
 }
 
+#[derive(Debug)]
+pub struct PoolCreationError;
+impl fmt::Display for PoolCreationError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "Ukuran thread pool tidak boleh nol.")
+    }
+}
+
 type Job = Box<dyn FnOnce() + Send + 'static>;
 
 impl ThreadPool {
-    /// Create a new ThreadPool.
-    ///
-    /// The size is the number of threads in the pool.
-    ///
-    /// # Panics
-    ///
-    /// The `new` function will panic if the size is zero.
+    pub fn build(size: usize) -> Result<ThreadPool, PoolCreationError> {
+        if size == 0 {
+            return Err(PoolCreationError);
+        }
+
+        let (sender, receiver) = mpsc::channel();
+        let receiver = Arc::new(Mutex::new(receiver));
+        let mut workers = Vec::with_capacity(size);
+
+        for id in 0..size {
+            workers.push(Worker::new(id, Arc::clone(&receiver)));
+        }
+
+        Ok(ThreadPool { workers, sender })
+    }
+    
     pub fn new(size: usize) -> ThreadPool {
         assert!(size > 0);
 
